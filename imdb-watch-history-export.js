@@ -1,7 +1,7 @@
 /* ==========================================================================
    IMDb "Watch history" -> CSV exporter  (DevTools console script)
 
-   Run on: https://www.imdb.com/list/watchhistory/?ref_=wh_nv_wtchd&view=detailed
+   Run on: https://www.imdb.com/list/watchhistory/?view=detailed
    while logged in, with the "Detailed" view active.
 
    Chrome/Edge: the first time you paste into the console it may ask you to
@@ -18,9 +18,9 @@
     delimiter:       ',',    // use ';' if your Excel expects semicolons
     alsoJson:        false,  // true = also download a .json copy
     stripRankPrefix: true,   // remove a leading "12. " from titles
-    scrollStepMs:    1500,    // pause between scroll steps
+    scrollStepMs:    1500,   // pause between scroll steps
     maxIdleRounds:   8,      // stop after N scrolls with no new rows
-    maxRuntimeMs:    5 * 60 * 1000,
+    maxRuntimeMs:    20 * 60 * 1000,
     filename: `imdb-watch-history-${new Date().toISOString().slice(0, 10)}`,
   };
 
@@ -41,8 +41,17 @@
   const expectedTotal = () => {
     const el = document.querySelector('[data-testid="list-page-mc-total-items"]');
     const src = el ? el.textContent : document.body.innerText.slice(0, 4000);
-    const m = src.replace(/,/g, '').match(/(\d+)\s*titles?/i);
+    const m = src.replace(/,/g, '').match(/(\d+)\s*(titles?|items?)/i);  // "105items", "1,234 titles"
     return m ? Number(m[1]) : null;
+  };
+
+  // Only the Detailed view shows series name, plot and credits; Grid view has no rows at all.
+  const currentView = () => {
+    const root = listRoot();
+    if (root?.querySelector('.compact-list-view')) return 'Compact';
+    if (root?.querySelector('.grid-list-view')) return 'Grid';
+    const label = document.querySelector('[data-testid="list-page-mc-view-options"] button')?.getAttribute('aria-label') || '';
+    return label.match(/currently\s+(\w+)\s+view/i)?.[1] || '';
   };
 
   const TYPE_RE = /^(TV\s*(Episode|Series|Mini[-\s]?Series|Movie|Special|Short)|Video Game|Video|Short|Podcast\s*(Series|Episode)|Music Video)$/i;
@@ -157,8 +166,15 @@
     return;
   }
 
+  const view = currentView();
+  if (view && !/detailed/i.test(view)) {
+    console.error(`%cThe list is in ${view} view - switch it to Detailed view and run the script again:`, 'color:#e00;font-weight:bold');
+    console.error(`${location.origin}${location.pathname}?view=detailed`);
+    return;
+  }
+
   const total = expectedTotal();
-  console.log(`Starting. ${rowNodes().length} rows in DOM${total ? `, page reports ${total} titles` : ''}.`);
+  console.log(`Starting. ${rowNodes().length} rows in DOM${total ? `, page reports ${total} items` : ''}.`);
   harvest();
 
   if (CONFIG.autoScroll) {
@@ -237,7 +253,7 @@
     'color:#0a0;font-weight:bold'
   );
   if (total && rows.length !== total) {
-    console.warn(`Page reported ${total} titles but ${rows.length} were collected — scroll to the bottom manually and re-run.`);
+    console.warn(`Page reported ${total} items but ${rows.length} were collected — scroll to the bottom manually and re-run.`);
   }
   console.table(rows.slice(0, 5), ['type', 'title', 'series_title', 'episode', 'year', 'imdb_rating', 'my_rating']);
   console.log('Data kept in window.__imdb — if the download was blocked, run:  copy(window.__imdb.csv)');
